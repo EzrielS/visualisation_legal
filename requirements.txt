@@ -4,3 +4,4 @@ altair
 numpy
 gender_guesser
 unidecode
+openpyxl
