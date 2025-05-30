@@ -141,3 +141,43 @@ def wrap_with_scroll(html: str, height: int = 300) -> str:
       {html}
     </div>
     """
+
+
+def show_flux_entree_chart(
+    df: pd.DataFrame,
+    note: str = "",
+    tooltip_label: str = "Année",
+    height_px: int = 350,
+    width_px: int = 800,
+) -> None:
+
+    base = (
+        alt.Chart(df)
+           .transform_calculate(Note=f"'{note}'")
+           .encode(
+               x=alt.X("name:O",
+                       title="Année de prestation de serment",
+                       axis=alt.Axis(labelAngle=-45)),
+               y=alt.Y(
+                   "value:Q",
+                   title="Nouveaux avocats",
+                   scale=alt.Scale(domainMin=0, nice=True)   # <-- min forcé à 0
+               ),
+               tooltip=[
+                   alt.Tooltip("name:O",  title=tooltip_label),
+                   alt.Tooltip("value:Q", title="Admissions"),
+                   alt.Tooltip("Note:N",  title="Note"),
+               ],
+           )
+    )
+
+    area = base.mark_area(color="#4C78A8", opacity=0.25)
+    line = base.mark_line(color="#4C78A8", strokeWidth=2)
+    pts  = base.mark_point(color="#4C78A8", size=50)
+
+    chart = (area + line + pts).properties(width=width_px,
+                                           height=height_px,
+                                           title="Flux d’entrée au barreau").interactive()
+
+    # plus de composant HTML scrollable
+    st.altair_chart(chart, use_container_width=False)

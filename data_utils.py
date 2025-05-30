@@ -153,6 +153,7 @@ def process_data(df: pd.DataFrame) -> pd.DataFrame:
         .apply(compute_experience)
 
     df = add_gender(df)
+    df = add_age_columns(df)
     return df
 
 
@@ -193,6 +194,7 @@ def prepare_chart_data(df: pd.DataFrame) -> dict:
 
     gender = df['gender'].value_counts().rename_axis('sex').reset_index(name='value')
 
+    flux_entree = prepare_flux_entree_data(df)
     return {
         'barreau': barreau,
         'langues': langues,
@@ -200,5 +202,70 @@ def prepare_chart_data(df: pd.DataFrame) -> dict:
         'activites_dominantes': activites_dominantes,
         'experience': experience,
         'gender': gender,
+        'flux_entree': flux_entree
     }
 
+
+
+############################################
+# data_utils.py  (à la suite de process_data)
+
+def add_age_columns(df, today=None):
+    """Ajoute seniority, age estimé et tranche d'âge."""
+    if today is None:
+        today = pd.Timestamp.today().normalize()
+    df = df.copy()
+    df['date_prestation_serment'] = pd.to_datetime(
+        df['date_prestation_serment'], errors='coerce')
+    df['seniority_years'] = (
+        (today - df['date_prestation_serment']).dt.days / 365.25
+    )
+    df['age_est'] = df['seniority_years'] + 27        # 27 ans ≈ âge moyen du serment
+    bins = [0, 30, 40, 50, 60, np.inf]
+    labels = ['<30', '30-39', '40-49', '50-59', '60+']
+    df['age_bracket'] = pd.cut(df['age_est'], bins=bins, labels=labels)
+    df['in_structure'] = df['structure_reference'].notna() & df['structure_reference'].str.strip().ne('')
+    df['is_specialised'] = df[['specialisations_1','specialisations_2','specialisations_3']].notna().any(axis=1)
+    return df
+
+
+def compute_age_insights(df):
+    """Retourne deux tables prêtes à afficher (structure & spé)."""
+    # on ignore les 'NaN' pour éviter de biaiser les %.
+    base = df.dropna(subset=['age_bracket'])
+    # Structure
+    struct = (base.groupby(['age_bracket','in_structure'])
+                   .size().unstack(fill_value=0)
+                   .rename(columns={False: 'Solo', True: 'Structure'}))
+    struct['% Structure'] = (struct['Structure']/struct.sum(axis=1)*100).round(1)
+    # Spécialisation
+    spec = (base.groupby(['age_bracket','is_specialised'])
+                  .size().unstack(fill_value=0)
+                  .rename(columns={False: 'Non spé', True: 'Spécialisés'}))
+    spec['% Spécialisés'] = (spec['Spécialisés']/spec.sum(axis=1)*100).round(1)
+    return struct, spec
+
+
+
+##########################################
+def prepare_flux_entree_data(df: pd.DataFrame,
+                             col_date="date_prestation_serment",
+                             year_min: int = 1990,
+                             year_max: int = 2024) -> pd.DataFrame:
+    """
+    Agrège le nombre d'avocats admis par année de prestation de serment.
+
+    Retourne un DataFrame avec colonnes `name` (année, str) et `value` (effectif).
+    """
+    years = (
+        pd.to_datetime(df[col_date], errors="coerce")
+          .dt.year
+          .value_counts()
+          .sort_index()
+          .loc[year_min:year_max]
+    )
+    flux_df = pd.DataFrame({
+        "name": years.index.astype(str),
+        "value": years.values,
+    })
+    return flux_df

@@ -5,13 +5,8 @@ from datetime import datetime
 import streamlit.components.v1 as components
 import numpy as np 
 
-from data_utils import compute_statistics, gini, process_data, prepare_chart_data
-from viz import show_specialisation_chart, show_activites_chart, langues_pie, experience_pie, gender_pie
-
-# ------------------------------
-# Fonctions utilitaires
-# ------------------------------
-
+from data_utils import compute_statistics, gini, process_data, prepare_chart_data, compute_age_insights
+from viz import show_specialisation_chart, show_activites_chart, langues_pie, experience_pie, gender_pie, show_flux_entree_chart
 
 
 # ------------------------------
@@ -52,6 +47,7 @@ def main():
 
     # Statistiques
     stats = compute_statistics(df)
+    struct_age, spec_age = compute_age_insights(df)
 
     # KPI principaux
     k1, k2, k3, k4 = st.columns(4)
@@ -84,6 +80,21 @@ def main():
     k11.metric("Quasi-retraités (%)", stats['pct_pre_retraite'])
     k12.metric("Gini Barreaux", stats['gini_barreaux'])
 
+
+    with st.expander("👤 Démographie par tranche d'âge", expanded=False):
+        a1, a2, a3 = st.columns(3)
+        # pourcentage de -30 ans
+        pct_jeunes = (
+            struct_age.loc['<30'].sum() / struct_age.sum().sum() * 100
+        ).round(1)
+        a1.metric("Jeunes (<30 ans)", f"{pct_jeunes} %")
+        a2.metric("Part structure (<30 ans)",
+                  f"{struct_age.loc['<30','% Structure']} %")
+        a3.metric("Spécialisés 60 +", 
+                  f"{spec_age.loc['60+','% Spécialisés']} %")
+
+
+
     # un peu plus bas, dans les Insights ou en tableau :
     st.write(f"- Shannon spés.: {stats['shannon_specialisations']}")
     st.write(f"- % Top 3 Barreaux: {stats['pct_top3_barreaux']}%")
@@ -91,6 +102,16 @@ def main():
 
 
     st.markdown("---")
+
+    # Préparer données chart
+    charts = prepare_chart_data(df)
+
+    col1, col2, col3 = st.columns([1, 6, 1])   # 6 = largeur utile, 1+1 = marges
+    with col2:
+        show_flux_entree_chart(charts['flux_entree'])
+
+    st.markdown("---")
+
     st.subheader("Indicateurs de Performance")
     p1, p2, p3, p4 = st.columns(4)
     p1.write(f"**Avocats Multilingues**\n{stats['multilingues']}")
@@ -99,8 +120,6 @@ def main():
     p4.write(f"**Jeunes Diplômés (≤5 ans)**\n{stats['jeunes_diplomes']}")
 
 
-    # Préparer données chart
-    charts = prepare_chart_data(df)
 
     # Charts interactifs
     st.subheader("Visualisations")
@@ -144,6 +163,59 @@ def main():
         show_activites_chart(dfs)
     with c6:
         st.altair_chart(gender_pie(charts['gender']), use_container_width=True)
+
+
+    st.markdown("---")
+    st.subheader("Statistiques par age (estimé)")
+
+
+    c7, c8 = st.columns(2)
+    order = ['<30', '30-39', '40-49', '50-59', '60+']
+
+    with c7:
+        # Bar empilée Structure vs Solo
+        chart_struct = (
+            struct_age.reset_index()
+                      .melt(id_vars='age_bracket', value_vars=['Solo','Structure'])
+        )
+        base = struct_age.reset_index()              # garde les colonnes 'age_bracket', 'Solo', 'Structure'
+
+        st.altair_chart(
+            alt.Chart(base)
+               .transform_fold(                     # on plie les deux colonnes côté Vega-Lite
+                   ['Solo', 'Structure'],
+                   as_=['Statut', 'Effectif']
+               )
+               .mark_bar()
+               .encode(
+                   x=alt.X('age_bracket:N', title="Tranche d'âge", sort=order),
+                   y=alt.Y('Effectif:Q', stack='normalize', title='%'),
+                   color=alt.Color('Statut:N', title='Statut'),
+                   tooltip=['age_bracket:N', 'Statut:N', 'Effectif:Q']
+               )
+               .properties(height=250, title={"text": "Répartition Solo vs Structure par tranche d'âge"}),
+            use_container_width=True
+        )
+
+      
+    with c8:
+        # Bar simple % spécialisés
+        chart_spec = spec_age.reset_index()[['age_bracket','% Spécialisés']]
+        st.altair_chart(
+            alt.Chart(chart_spec)
+               .mark_bar()
+               .encode(
+                   x=alt.X('age_bracket:N', title="Tranche d'âge", sort=order),
+                   y='% Spécialisés:Q',
+                   tooltip=['age_bracket','% Spécialisés'],
+               )
+               .properties(height=250, title={"text": "% d'individus spécialisés par tranche d'âge"}),
+            use_container_width=True
+        )
+
+
+
+
     # Analyse géographique
     st.markdown("---")
     st.subheader("Analyse Géographique Détaillée")
