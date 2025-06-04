@@ -224,7 +224,7 @@ def add_age_columns(df, today=None):
     bins = [0, 30, 40, 50, 60, np.inf]
     labels = ['<30', '30-39', '40-49', '50-59', '60+']
     df['age_bracket'] = pd.cut(df['age_est'], bins=bins, labels=labels)
-    df['in_structure'] = df['structure_reference'].notna() & df['structure_reference'].str.strip().ne('')
+    df['in_structure'] = (df['structure_reference'].notna() & df['structure_reference'].str.strip().ne('')) | (df.structure_reference.apply(lambda x: x.split()[0] == 'Individuel' if type(x) == str else False))
     df['is_specialised'] = df[['specialisations_1','specialisations_2','specialisations_3']].notna().any(axis=1)
     return df
 
@@ -237,11 +237,13 @@ def compute_age_insights(df):
     struct = (base.groupby(['age_bracket','in_structure'])
                    .size().unstack(fill_value=0)
                    .rename(columns={False: 'Solo', True: 'Structure'}))
+    struct = struct.reindex(columns=['Solo', 'Structure'], fill_value=0)
     struct['% Structure'] = (struct['Structure']/struct.sum(axis=1)*100).round(1)
     # Spécialisation
     spec = (base.groupby(['age_bracket','is_specialised'])
                   .size().unstack(fill_value=0)
                   .rename(columns={False: 'Non spé', True: 'Spécialisés'}))
+    spec = spec.reindex(columns=['Non spé', 'Spécialisés'], fill_value=0)
     spec['% Spécialisés'] = (spec['Spécialisés']/spec.sum(axis=1)*100).round(1)
     return struct, spec
 
